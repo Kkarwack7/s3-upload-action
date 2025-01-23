@@ -1,46 +1,108 @@
 # S3 Upload Action
 
-This is a GitHub Action to upload files to Amazon S3.
+This is a GitHub Action that uploads a file to Amazon S3.
+Uploaded files can be accessed via HTTP (Use [presigned URL](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ShareObjectPreSignedURL.html) for private s3 buckets).
+Currently, only single file upload is supported.
+
+## Inputs
+
+| Name | Description | Default |
+| --- | --- | --- |
+| `aws-access-key-id` | (Required) Your AWS access key ID. | |
+| `aws-secret-access-key` | (Required) Your AWS secret access key. | |
+| `aws-region` | (Required) Region where the bucket is located. | |
+| `aws-bucket` | (Required) S3 bucket to upload files. | |
+| `file-path` | (Required) Path of the file to upload, eg `./myfile.txt` | |
+| `destination-dir` | Directory on the bucket to upload files. If you don't want to apply anything, specify `/`. | 32 random alphanumeric characters |
+| `bucket-root` | Root directory on the bucket to upload files. Useful for separating objects in buckets that are not related to this action. If you don't want to apply anything, specify `/`. | `artifacts` |
+| `output-file-url` | Add the URL of the file to the output of this action. | `false` |
+| `content-type` | Specify the contents of the 'Content-type' header when downloading the file, eg `image/png`. | |
+| `output-qr-url` | Generate a QR code image for the URL of the file and add the URL of the image to the output of this action. Useful for mobile devices. | `false` |
+| `qr-width` | QR code image width pixels. Specify `100` to `1000`. | `120` |
+| `public` | If `false` is specified, [ACL](https://docs.aws.amazon.com/AmazonS3/latest/userguide/acl-overview.html#canned-acl) is set to 'private' and presigned URL is used. Basically should be `false` for private buckets. | `false` |
+| `expire` | Expiration seconds for presigned URL. Specify `0` to `604800`(1 week). | `604800` |
+
+## Outputs
+
+| Name | Description |
+| --- | --- |
+| `result` | Result of this action. `success` or `failure` is set. |
+| `file-url` | URL of the uploaded file. |
+| `qr-url` | URL of the generated QR code image. |
 
 ## Usage
 
+### Basic usage
+
 ```yaml
-- uses: aws-actions/configure-aws-credentials@v1
+- uses: hkusu/s3-upload-action@v2
   with:
     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    aws-region: ap-northeast-1
-- uses: hkusu/s3-upload-action@v1
-  id: upload
-  with:
-    s3-bucket: my-bucket
-    source-path: ./sample.txt
-    destination-path: my-dir/sample.txt
-    download-base-url: http://my-bucket.s3-website-ap-northeast-1.amazonaws.com # option
-    download-qr-path: my-dir/qr.png # option. If specified, it will be created on S3
-    download-qr-width: 180 # option(default: 120). Specify 100 to 1000
-- name: Show download URL
-  run: |
-    echo '${{ steps.upload.outputs.download-url }}' # if 'download-base-url' is specified
-    echo '${{ steps.upload.outputs.download-qr-url }}' # if 'download-base-url' and `download-qr-path` is specified
+    aws-region: 'ap-northeast-1'
+    aws-bucket: ${{ secrets.AWS_BUCKET }}
+    file-path: './myfile.txt'
 ```
 
-### Result of action
+In this example, `myfile.txt` is stored in `artifacts/<32 random characters>/myfile.txt` on the bucket.
+Specify `destination-dir` input or `bucket-root` input to change the destination.
 
-Use `result` outputs.
+### URL of the uploaded file
+
+Use `file-url` output.
 
 ```yaml
-- uses: hkusu/s3-upload-action@v1
-  id: upload
+- uses: hkusu/s3-upload-action@v2
+  id: upload # specify some ID for use in subsequent steps
   with:
-    s3-bucket: my-bucket
-    source-path: ./sample.txt
-    destination-path: my-dir/sample.txt
-- name: Show result
-  if: always()
-  run: echo '${{ steps.upload.outputs.result }}' # success or failure
+    aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    aws-region: 'ap-northeast-1'
+    aws-bucket: ${{ secrets.AWS_BUCKET }}
+    file-path: './myfile.txt'
+    output-file-url: 'true' # specify true
+- name: Show URL
+  run: echo '${{ steps.upload.outputs.file-url }}' # use this output
 ```
+
+When uploading an image and displaying it on a browser, specify `image/png` etc. for `content-type` input.
+For Android apk file, you can install it on your device by specifying `application/vnd.android.package-archive`.
+
+> [!NOTE]  
+> If `public` input is set to `true` and presigned URL is applied, the AWS access key ID will be included in the URL.
+> Therefore, if you manage that ID with [secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions), be aware that when you display or output something on GitHub, part of the URL will be masked as `***`.
+
+### URL of the generated QR code image
+
+Use `qr-url` output.
+
+```yaml
+- uses: hkusu/s3-upload-action@v2
+  id: upload # specify some ID for use in subsequent steps
+  with:
+    aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    aws-region: 'ap-northeast-1'
+    aws-bucket: ${{ secrets.AWS_BUCKET }}
+    file-path: './myfile.txt'
+    output-qr-url: 'true' # specify true
+- name: Show URL
+  run: echo '${{ steps.upload.outputs.qr-url }}' # use this output
+```
+
+Specify `qr-width` input to change the size of the QR code image.
+
+QR code image sample:
+
+![image](doc/qr.png)
+
+## Publish file to public
+
+If `false` is specified for the `public` input, ACL is set to 'private' and presigned URL is used.
+However, the expiration date of the presigned URL is up to one week (It can also be shortened by specifying the `expire` input).
+
+If you don't want to set the expiration date, you can get the normal URL without authentication by specifying `true` for the `public` input (Bucket side settings are also required to make it public).
 
 ## License
 
-MIT
+[MIT](LICENSE)
